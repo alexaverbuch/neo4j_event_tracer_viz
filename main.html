@@ -63,10 +63,7 @@
 
             events.sort(compare);
 
-            console.log(events)
-
-            // TODO uncomment
-            // makeSankey(events)
+            makeSankey(events)
             makeTree(events)
         };
         reader.readAsText(file);
@@ -88,11 +85,10 @@
         function makeTree(events) {
 
             function makeTreeData(events) {
-                const reducer = (accTreeData, event) => addChildToTopNode(accTreeData,eventToTreeNode(event));
-                // TODO
-                // console.log("END");
-                // console.log(myTreeData);
-                return events.reduce(reducer, []);
+                const reducer = function (accTreeData, event) {
+                    return addChildToTopNode(accTreeData, eventToTreeNode(event));
+                };
+                return events.reduce(reducer, null);
             }
 
             function eventToTreeNode(event) {
@@ -103,117 +99,68 @@
                 };
             }
 
-            function addChildToTopNode(treeData, newChild) {
-                if (!treeData || treeData.length === 0) {
-                    return [newChild]
+            function addChildToTopNode(eventTree, newEvent) {
+                if (!eventTree) {
+                    // this is the first event. it will become the tree root.
+                    return newEvent
                 } else {
-                    let newTreeData = treeData.map(function (child) {
-                        return addChildToNode(child, newChild);
-                    });
-
-                    // TODO
-                    console.log("top node");
-                    console.log(treeData);
-                    console.log(newTreeData);
-
-                    // no change tree means the parent was not found
-                    // add to top level instead.
-                    if (newTreeData === treeData) {
-                        return treeData.concat([newChild]);
-                    } else {
-                        return newTreeData;
-                    }
+                    // events are added to tree in order of their execution start time.
+                    // this means their parent has already been added.
+                    // add new event into tree.
+                    return addEventToTree(eventTree, newEvent);
                 }
             }
 
-            function addChildToNode(treeData, newChild) {
-                if (newChild.parent === treeData.name) {
-                    let newChildren = (!treeData.children || treeData.children.length === 0) ? [newChild] : treeData.children.concat([newChild]);
-                    // TODO
-                    // console.log("new children 1");
-                    // console.log(newChildren);
+            function addEventToTree(eventTree, newEvent) {
+                if (newEvent.parent === eventTree.name) {
+                    // we have found the new event's upstream/parent
+                    let newChildren = (!eventTree.children || eventTree.children.length === 0)
+                        ? [newEvent]
+                        : eventTree.children.concat([newEvent]);
                     return {
-                        "name": treeData.name,
-                        "parent": treeData.parent,
+                        "name": eventTree.name,
+                        "parent": eventTree.parent,
                         "children": newChildren
                     };
                 } else {
-                    let newChildren = (!treeData.children || treeData.children.length === 0)
-                        ? []
-                        : treeData.children.map(function (child) {
-                            return addChildToNode(child, newChild);
+                    // this is not the new event's upstream/parent, continue searching down the tree
+                    let newChildren = (!eventTree.children || eventTree.children.length === 0)
+                        // this is neither the parent, nor does it have any children. do nothing.
+                        ? eventTree.children
+                        // this is not the parent, but maybe one of the children will be. keep looking.
+                        : eventTree.children.map(function (child) {
+                            return addEventToTree(child, newEvent);
                         });
-                    // TODO
-                    // console.log("new children 2");
-                    // console.log(newChildren);
                     return {
-                        "name": treeData.name,
-                        "parent": treeData.parent,
+                        "name": eventTree.name,
+                        "parent": eventTree.parent,
                         "children": newChildren
                     };
                 }
+            }
 
-                // TODO need case where this is an upstream too?
-            };
-
-            let treeData = makeTreeData(events);
-
-            const treeDataOLD =
-                [{
-                    "name": "Top Level",
-                    "parent": "null",
-                    "children": [
-                        {
-                            "name": "Level 2: A",
-                            "parent": "Top Level",
-                            "children": [
-                                {
-                                    "name": "Son of A",
-                                    "parent": "Level 2: A"
-                                },
-                                {
-                                    "name": "Daughter of A",
-                                    "parent": "Level 2: A",
-                                    "children": [
-                                        {
-                                            "name": "Son of Level 2: A",
-                                            "parent": "Level 2: A"
-                                        },
-                                        {
-                                            "name": "Daughter of Level 2: A",
-                                            "parent": "Level 2: A"
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        {
-                            "name": "Level 2: B",
-                            "parent": "Top Level"
-                        }
-                    ]
-                }];
+            let treeData = [makeTreeData(events)];
 
             // ************** Generate the tree diagram	 *****************
-            var margin = {top: 20, right: 120, bottom: 20, left: 120},
-                width = 960 - margin.right - margin.left,
-                height = 500 - margin.top - margin.bottom;
+            const margin = {top: 20, left: 20};
+            const width = 100000;
+            const height = 1000;
 
-            var i = 0,
-                duration = 750,
-                root;
+            let i = 0;
+            const duration = 750;
+            let root;
 
-            var tree = d3.layout.tree()
+            const tree = d3.layout.tree()
                 .size([height, width]);
 
-            var diagonal = d3.svg.diagonal()
+            const diagonal = d3.svg.diagonal()
                 .projection(function (d) {
                     return [d.y, d.x];
                 });
 
-            var svg = d3.select("body").append("svg")
-                .attr("width", width + margin.right + margin.left)
-                .attr("height", height + margin.top + margin.bottom)
+            const svg = d3.select("body").append("svg")
+                .attr("width", width)
+                .attr("height", height)
                 .append("g")
                 .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
@@ -228,8 +175,8 @@
             function update(source) {
 
                 // Compute the new tree layout.
-                var nodes = tree.nodes(root).reverse(),
-                    links = tree.links(nodes);
+                const nodes = tree.nodes(root).reverse();
+                const links = tree.links(nodes);
 
                 // Normalize for fixed-depth.
                 nodes.forEach(function (d) {
@@ -237,13 +184,13 @@
                 });
 
                 // Update the nodes…
-                var node = svg.selectAll("g.node")
+                const node = svg.selectAll("g.node")
                     .data(nodes, function (d) {
                         return d.id || (d.id = ++i);
                     });
 
                 // Enter any new nodes at the parent's previous position.
-                var nodeEnter = node.enter().append("g")
+                const nodeEnter = node.enter().append("g")
                     .attr("class", "node")
                     .attr("transform", function (d) {
                         return "translate(" + source.y0 + "," + source.x0 + ")";
@@ -270,7 +217,7 @@
                     .style("fill-opacity", 1e-6);
 
                 // Transition nodes to their new position.
-                var nodeUpdate = node.transition()
+                const nodeUpdate = node.transition()
                     .duration(duration)
                     .attr("transform", function (d) {
                         return "translate(" + d.y + "," + d.x + ")";
@@ -286,7 +233,7 @@
                     .style("fill-opacity", 1);
 
                 // Transition exiting nodes to the parent's new position.
-                var nodeExit = node.exit().transition()
+                const nodeExit = node.exit().transition()
                     .duration(duration)
                     .attr("transform", function (d) {
                         return "translate(" + source.y + "," + source.x + ")";
@@ -300,7 +247,7 @@
                     .style("fill-opacity", 1e-6);
 
                 // Update the links…
-                var link = svg.selectAll("path.link")
+                const link = svg.selectAll("path.link")
                     .data(links, function (d) {
                         return d.target.id;
                     });
@@ -309,7 +256,7 @@
                 link.enter().insert("path", "g")
                     .attr("class", "link")
                     .attr("d", function (d) {
-                        var o = {x: source.x0, y: source.y0};
+                        const o = {x: source.x0, y: source.y0};
                         return diagonal({source: o, target: o});
                     });
 
@@ -322,7 +269,7 @@
                 link.exit().transition()
                     .duration(duration)
                     .attr("d", function (d) {
-                        var o = {x: source.x, y: source.y};
+                        const o = {x: source.x, y: source.y};
                         return diagonal({source: o, target: o});
                     })
                     .remove();
