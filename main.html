@@ -95,6 +95,7 @@
                 return {
                     "name": event.id,
                     "parent": event.upstreamId,
+                    "label": event.pipeline.substr(0, event.pipeline.indexOf("(")),
                     "children": []
                 };
             }
@@ -117,11 +118,7 @@
                     let newChildren = (!eventTree.children || eventTree.children.length === 0)
                         ? [newEvent]
                         : eventTree.children.concat([newEvent]);
-                    return {
-                        "name": eventTree.name,
-                        "parent": eventTree.parent,
-                        "children": newChildren
-                    };
+                    return withUpdatedChildren(eventTree, newChildren);
                 } else {
                     // this is not the new event's upstream/parent, continue searching down the tree
                     let newChildren = (!eventTree.children || eventTree.children.length === 0)
@@ -131,12 +128,17 @@
                         : eventTree.children.map(function (child) {
                             return addEventToTree(child, newEvent);
                         });
-                    return {
-                        "name": eventTree.name,
-                        "parent": eventTree.parent,
-                        "children": newChildren
-                    };
+                    return withUpdatedChildren(eventTree, newChildren);
                 }
+            }
+
+            function withUpdatedChildren(eventTree, newChildren) {
+                return {
+                    "name": eventTree.name,
+                    "parent": eventTree.parent,
+                    "label": eventTree.label,
+                    "children": newChildren
+                };
             }
 
             let treeData = [makeTreeData(events)];
@@ -212,7 +214,7 @@
                         return d.children || d._children ? "end" : "start";
                     })
                     .text(function (d) {
-                        return d.name;
+                        return d.label;
                     })
                     .style("fill-opacity", 1e-6);
 
