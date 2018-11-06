@@ -44,21 +44,8 @@
                 .filter(function (line) {
                     return line.length !== 0
                 })
-                // to split row
-                .map(function (line) {
-                    let pipelineIndex = line.indexOf("Pipeline");
-                    let lastCommaIndex = line.lastIndexOf(",", pipelineIndex);
-                    let columns = line.substr(0, lastCommaIndex).split(",");
-                    columns[columns.length] = line
-                        .substr(lastCommaIndex + 1)
-                        .replace("Pipeline","")
-                        .replace(/Operator/g,"");
-                    return columns;
-                })
-                // to event object
-                .map(function (splitRow) {
-                    return splitRowToEvent(splitRow);
-                });
+                .map(lineToRow)
+                .map(rowToEvent);
 
             function compare(a, b) {
                 if (a.startTime < b.startTime)
@@ -69,13 +56,26 @@
             }
 
             events.sort(compare);
-            const minStartTime = events[0].startTime;
-            const maxStartTime = events[events.length - 1].startTime;
-            makeTree(events, minStartTime, maxStartTime);
+            showTree(events);
         };
         reader.readAsText(file);
 
-        function splitRowToEvent(splitRow) {
+        // ===========================================================================================
+        // ======================================== parse CSV ========================================
+        // ===========================================================================================
+
+        function lineToRow(line) {
+            let pipelineIndex = line.indexOf("Pipeline");
+            let lastCommaIndex = line.lastIndexOf(",", pipelineIndex);
+            let columns = line.substr(0, lastCommaIndex).split(",");
+            columns[columns.length] = line
+                .substr(lastCommaIndex + 1)
+                .replace("Pipeline", "")
+                .replace(/Operator/g, "");
+            return columns;
+        }
+
+        function rowToEvent(splitRow) {
             return {
                 "id": parseInt(splitRow[0]),
                 "upstreamId": parseInt(splitRow[1]),
@@ -89,45 +89,58 @@
             }
         }
 
-        function makeTree(events, minStartTime, maxStartTime) {
+        function showTree(events) {
 
-            function makeTreeData(events) {
-                const reducer = function (accTreeData, event) {
-                    return addChildToTopNode(accTreeData, eventToTreeNode(event));
+            // ===========================================================================================
+            // ======================================== make tree ========================================
+            // ===========================================================================================
+
+            function makeTree(events) {
+                const reducer = function (accTree, event) {
+                    const parentName = event.upstreamId;
+                    return addChildToTopNode(
+                        accTree,
+                        parentName,
+                        (parent) => {
+                            return eventToTreeNode(event, parent);
+                        });
                 };
                 return events.reduce(reducer, null);
             }
 
-            function eventToTreeNode(event) {
+            function eventToTreeNode(event, parent) {
+                const normalizedStart = (parent === null)
+                    ? 0
+                    : parent.start + parent.duration;
                 return {
                     "name": event.id,
                     "parent": event.upstreamId,
                     "label": event.pipeline,
                     // zero-base start times
-                    "start": event.startTime - minStartTime,
+                    "start": normalizedStart,
                     "duration": event.stopTime - event.startTime,
                     "children": []
                 }
             }
 
-            function addChildToTopNode(eventTree, newEvent) {
+            function addChildToTopNode(eventTree, parentName, newEventCreator) {
                 if (!eventTree) {
                     // this is the first event. it will become the tree root.
-                    return newEvent
+                    return newEventCreator(null)
                 } else {
                     // events are added to tree in order of their execution start time.
                     // this means their parent has already been added.
                     // add new event into tree.
-                    return addEventToTree(eventTree, newEvent);
+                    return addEventToTree(eventTree, parentName, newEventCreator);
                 }
             }
 
-            function addEventToTree(eventTree, newEvent) {
-                if (newEvent.parent === eventTree.name) {
+            function addEventToTree(eventTree, newEventParent, newEventCreator) {
+                if (newEventParent === eventTree.name) {
                     // we have found the new event's upstream/parent
                     let newChildren = (!eventTree.children || eventTree.children.length === 0)
-                        ? [newEvent]
-                        : eventTree.children.concat([newEvent]);
+                        ? [newEventCreator(eventTree)]
+                        : eventTree.children.concat([newEventCreator(eventTree)]);
                     return withUpdatedChildren(eventTree, newChildren);
                 } else {
                     // this is not the new event's upstream/parent, continue searching down the tree
@@ -136,7 +149,7 @@
                         ? eventTree.children
                         // this is not the parent, but maybe one of the children will be. keep looking.
                         : eventTree.children.map(function (child) {
-                            return addEventToTree(child, newEvent);
+                            return addEventToTree(child, newEventParent, newEventCreator);
                         });
                     return withUpdatedChildren(eventTree, newChildren);
                 }
@@ -144,24 +157,93 @@
 
             function withUpdatedChildren(eventTree, newChildren) {
                 return {
-                    "name": eventTree.name,
-                    "parent": eventTree.parent,
-                    "label": eventTree.label,
-                    "start": eventTree.start,
-                    "duration": eventTree.duration,
-                    "children": newChildren
+                    name: eventTree.name,
+                    parent: eventTree.parent,
+                    label: eventTree.label,
+                    start: eventTree.start,
+                    duration: eventTree.duration,
+                    children: newChildren
                 };
             }
 
-            const treeData = [makeTreeData(events)];
+            // ===================================================================================
+            // ================= scale start & duration to screen coordinates ====================
+            // ===================================================================================
 
-            // ************** Generate the tree diagram	 *****************
-            const margin = {top: 20, left: 20};
-            const width = 100000;
+            function scaleCoordinates(treeData, scaleFactor) {
+                let children = treeData.children;
+                let newChildren = (children.length === 0)
+                    ? []
+                    : children.map(child => scaleCoordinates(child, scaleFactor));
+                return {
+                    name: treeData.name,
+                    parent: treeData.parent,
+                    label: treeData.label,
+                    start: treeData.start * scaleFactor,
+                    duration: treeData.duration * scaleFactor,
+                    children: newChildren
+                };
+            }
+
+            function getMax(treeData) {
+                let currentMax = treeData.start + treeData.duration;
+                let children = treeData.children;
+                if (children.length === 0) {
+                    return currentMax;
+                } else {
+                    const reducer = function (maxAcc, event) {
+                        let eventMax = getMax(event);
+                        return Math.max(eventMax, maxAcc);
+                    };
+                    return children.reduce(reducer, currentMax);
+                }
+            }
+
+            // ===================================================================================
+            // ======== add spacing between nodes, in units of screen coordinates ================
+            // ===================================================================================
+
+            function addSpacingBetweenNodes(treeData, offset, depth) {
+                let children = treeData.children;
+                let newChildren = (children.length === 0)
+                    ? []
+                    : children.map(child => addSpacingBetweenNodes(child, offset, depth + 1));
+                return {
+                    name: treeData.name,
+                    parent: treeData.parent,
+                    label: treeData.label,
+                    start: treeData.start + (offset * depth),
+                    duration: treeData.duration,
+                    children: newChildren
+                };
+            }
+
+            // ===========================================================================================
+            // ======================================== render tree ======================================
+            // ===========================================================================================
+
+            const margin = {top: 30, bottom: 0, left: 0, right: 0};
+            const width = 10000;
             const height = 1000;
+            const spaceBetween = 100;
 
-            const startTimeRange = maxStartTime - minStartTime;
-            const startTimeMultiplier = width / startTimeRange;
+            // parse csv log into a tree
+            const baseTree = makeTree(events);
+
+            // scale values (start time & stop time of tasks) to fit image width
+            const baseMax = getMax(baseTree);
+            const baseScaleFactor = width / baseMax;
+            const scaledTree = scaleCoordinates(baseTree, baseScaleFactor);
+
+            // insert empty space between end of parent tasks and start of child tasks, to make chart more readable
+            const spacedTree = addSpacingBetweenNodes(scaledTree, spaceBetween, 0);
+
+            // re-scale values, after inserting spaces, so image still fits
+            const spacedMax = getMax(spacedTree);
+            const spacedScaleFactor = width / spacedMax;
+            const scaledSpacedTree = scaleCoordinates(spacedTree, spacedScaleFactor);
+
+            const treeData = [scaledSpacedTree];
 
             let i = 0;
             const duration = 750;
@@ -196,16 +278,7 @@
 
                 // Normalize for fixed-depth.
                 nodes.forEach(function (d) {
-                    // d.y = d.depth * 180;
-                    //0, 10, 1000, 100000
-                    //0, 1, 3, 5
-                    // parent.start
-                    // parent.duration
-                    // let startTimeMultiplier = Math.log(parent.duration)
-                    // Math.log(d.duration) + Math.log(d.start)
-                    d.y = d.start * startTimeMultiplier;
-                    // TODO remove printout
-                    // console.log(d)
+                    d.y = d.start;
                 });
 
                 // Update the nodes…
@@ -233,6 +306,7 @@
                     .attr("x", 5)
                     .attr("dy", ".35em")
                     .attr("text-anchor", "start")
+                    .attr("transform", "rotate(-10)")
                     .text(function (d) {
                         return d.label;
                     })
@@ -248,10 +322,10 @@
                 const height = 20;
                 nodeUpdate.select("rect")
                     .attr("width", function (d) {
-                        return d.duration * startTimeMultiplier;
+                        return d.duration;
                     })
                     .attr("height", height)
-                    .attr("y", height/-2)
+                    .attr("y", height / -2)
                     .attr("text", function (d) {
                         return d.label;
                     })
