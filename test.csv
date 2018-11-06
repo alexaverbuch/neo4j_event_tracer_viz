@@ -1,7 +1,0 @@
-id,upstreamId,queryId,schedulingThreadId,schedulingTime(us),executionThreadId,startTime(us),stopTime(us),pipeline
-1,-1,0,0,0,1,1,2,"one"
-2,1,0,0,3,2,4,5,"one"
-3,1,0,0,4,3,5,6,"two"
-4,3,0,0,10,4,11,12,"two"
-5,4,0,0,15,5,16,17,"two"
-6,5,0,0,20,6,21,22,"three"

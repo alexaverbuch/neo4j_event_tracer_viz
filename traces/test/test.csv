@@ -1,0 +1,7 @@
+id,upstreamId,queryId,schedulingThreadId,schedulingTime(us),executionThreadId,startTime(us),stopTime(us),pipeline
+1,-1,0,0,0,1,1,2,",ExamplePipeline(Op1,Op2)
+2,1,0,0,3,2,4,5,",ExamplePipeline(Op1,Op2)
+3,1,0,0,4,3,5,6,",ExamplePipeline(Op1,Op2)
+4,3,0,0,10,4,11,12,",ExamplePipeline(Op1,Op2)
+5,4,0,0,15,5,16,17,",ExamplePipeline(Op1,Op2)
+6,5,0,0,20,6,21,22,",ExamplePipeline(Op1,Op2)

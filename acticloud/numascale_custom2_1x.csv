@@ -1,8 +1,0 @@
-id,upstreamId,queryId,schedulingThreadId,schedulingTime(us),executionThreadId,startTime(us),stopTime(us),pipeline
-2085084393950554,-1,1,1,0,184,15050,70317,StreamingPipeline(NodeIndexSeekOperator)
-2085084466023114,2085084393950554,1,1,72072,184,72266,103966,StreamingPipeline(ExpandAllOperator,FilterOperator)
-2085084497989585,2085084466023114,1,1,104039,184,104096,5716256,StreamingPipeline(ExpandAllOperator,FilterOperator,AggregationMapperOperator)
-2085090110985316,2085084497989585,1,1,5717034,184,5718453,12311205,StreamingPipeline(ExpandAllOperator,FilterOperator,AggregationMapperOperator)
-2085096706063838,2085090110985316,1,1,12312113,184,12312700,14058576,StreamingPipeline(ExpandAllOperator,FilterOperator,AggregationMapperOperator)
-2085098452717902,2085096706063838,1,1,14058767,184,14059012,14066425,ReducePipeline(AggregationReduceOperator,PreSortOperator)
-2085098460545602,2085098452717902,1,1,14066595,184,14066824,14077216,ReducePipeline(MergeSortOperator,ProjectOperator,ProduceResultOperator)
