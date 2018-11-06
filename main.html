@@ -11,7 +11,7 @@
             cursor: pointer;
         }
 
-        .node circle {
+        .node rect {
             fill: #fff;
             stroke: steelblue;
             stroke-width: 3px;
@@ -46,7 +46,14 @@
                 })
                 // to split row
                 .map(function (line) {
-                    return line.split(",");
+                    let pipelineIndex = line.indexOf("Pipeline");
+                    let lastCommaIndex = line.lastIndexOf(",", pipelineIndex);
+                    let columns = line.substr(0, lastCommaIndex).split(",");
+                    columns[columns.length] = line
+                        .substr(lastCommaIndex + 1)
+                        .replace("Pipeline","")
+                        .replace(/Operator/g,"");
+                    return columns;
                 })
                 // to event object
                 .map(function (splitRow) {
@@ -54,17 +61,17 @@
                 });
 
             function compare(a, b) {
-                if (a["startTime(us)"] < b["startTime(us)"])
+                if (a.startTime < b.startTime)
                     return -1;
-                if (a["startTime(us)"] > b["startTime(us)"])
+                if (a.startTime > b.startTime)
                     return 1;
                 return 0;
             }
 
             events.sort(compare);
-
-            makeSankey(events)
-            makeTree(events)
+            const minStartTime = events[0].startTime;
+            const maxStartTime = events[events.length - 1].startTime;
+            makeTree(events, minStartTime, maxStartTime);
         };
         reader.readAsText(file);
 
@@ -74,15 +81,15 @@
                 "upstreamId": parseInt(splitRow[1]),
                 "queryId": splitRow[2],
                 "schedulingThreadId": parseInt(splitRow[3]),
-                "schedulingTime(us)": parseInt(splitRow[4]),
+                "schedulingTime": parseInt(splitRow[4]),
                 "executionThreadId": parseInt(splitRow[5]),
-                "startTime(us)": parseInt(splitRow[6]),
-                "stopTime(us)": parseInt(splitRow[7]),
+                "startTime": parseInt(splitRow[6]),
+                "stopTime": parseInt(splitRow[7]),
                 "pipeline": splitRow[8]
             }
         }
 
-        function makeTree(events) {
+        function makeTree(events, minStartTime, maxStartTime) {
 
             function makeTreeData(events) {
                 const reducer = function (accTreeData, event) {
@@ -95,9 +102,12 @@
                 return {
                     "name": event.id,
                     "parent": event.upstreamId,
-                    "label": event.pipeline.substr(0, event.pipeline.indexOf("(")),
+                    "label": event.pipeline,
+                    // zero-base start times
+                    "start": event.startTime - minStartTime,
+                    "duration": event.stopTime - event.startTime,
                     "children": []
-                };
+                }
             }
 
             function addChildToTopNode(eventTree, newEvent) {
@@ -137,20 +147,25 @@
                     "name": eventTree.name,
                     "parent": eventTree.parent,
                     "label": eventTree.label,
+                    "start": eventTree.start,
+                    "duration": eventTree.duration,
                     "children": newChildren
                 };
             }
 
-            let treeData = [makeTreeData(events)];
+            const treeData = [makeTreeData(events)];
 
             // ************** Generate the tree diagram	 *****************
             const margin = {top: 20, left: 20};
             const width = 100000;
             const height = 1000;
 
+            const startTimeRange = maxStartTime - minStartTime;
+            const startTimeMultiplier = width / startTimeRange;
+
             let i = 0;
             const duration = 750;
-            let root;
+            const root = treeData[0];
 
             const tree = d3.layout.tree()
                 .size([height, width]);
@@ -166,7 +181,6 @@
                 .append("g")
                 .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-            root = treeData[0];
             root.x0 = height / 2;
             root.y0 = 0;
 
@@ -182,7 +196,16 @@
 
                 // Normalize for fixed-depth.
                 nodes.forEach(function (d) {
-                    d.y = d.depth * 180;
+                    // d.y = d.depth * 180;
+                    //0, 10, 1000, 100000
+                    //0, 1, 3, 5
+                    // parent.start
+                    // parent.duration
+                    // let startTimeMultiplier = Math.log(parent.duration)
+                    // Math.log(d.duration) + Math.log(d.start)
+                    d.y = d.start * startTimeMultiplier;
+                    // TODO remove printout
+                    // console.log(d)
                 });
 
                 // Update the nodes…
@@ -199,20 +222,17 @@
                     })
                     .on("click", click);
 
-                nodeEnter.append("circle")
-                    .attr("r", 1e-6)
+                nodeEnter.append("rect")
+                    .attr("width", 1e-6)
+                    .attr("height", 1e-6)
                     .style("fill", function (d) {
                         return d._children ? "lightsteelblue" : "#fff";
                     });
 
                 nodeEnter.append("text")
-                    .attr("x", function (d) {
-                        return d.children || d._children ? -13 : 13;
-                    })
+                    .attr("x", 5)
                     .attr("dy", ".35em")
-                    .attr("text-anchor", function (d) {
-                        return d.children || d._children ? "end" : "start";
-                    })
+                    .attr("text-anchor", "start")
                     .text(function (d) {
                         return d.label;
                     })
@@ -225,8 +245,16 @@
                         return "translate(" + d.y + "," + d.x + ")";
                     });
 
-                nodeUpdate.select("circle")
-                    .attr("r", 10)
+                const height = 20;
+                nodeUpdate.select("rect")
+                    .attr("width", function (d) {
+                        return d.duration * startTimeMultiplier;
+                    })
+                    .attr("height", height)
+                    .attr("y", height/-2)
+                    .attr("text", function (d) {
+                        return d.label;
+                    })
                     .style("fill", function (d) {
                         return d._children ? "lightsteelblue" : "#fff";
                     });
@@ -242,8 +270,9 @@
                     })
                     .remove();
 
-                nodeExit.select("circle")
-                    .attr("r", 1e-6);
+                nodeExit.select("rect")
+                    .attr("width", 1e-6)
+                    .attr("height", 1e-6);
 
                 nodeExit.select("text")
                     .style("fill-opacity", 1e-6);
